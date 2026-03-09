@@ -1,0 +1,7 @@
+watchdog==3.0.0
+PyYAML==6.0.2
+pywin32==306
+sentence-transformers
+faiss-cpu
+pyttsx3
+pyautogui

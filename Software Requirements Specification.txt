@@ -1,0 +1,418 @@
+Software Requirements Specification (SRS) for MAX (Phase-1 MVP)
+1. Introduction
+1.1 Purpose
+
+This document specifies the functional and non-functional requirements of MAX, an intelligent on-device AI system operator capable of executing system-level actions through voice/text commands. This SRS serves as a reference for development, testing, documentation, and evaluation.
+
+1.2 Scope
+
+MAX enables users to:
+
+Unlock their system via voice-based secure authentication
+
+Execute commands such as opening apps, files, and operations
+
+Run commands without switching desktops
+
+Perform time-based and completion-based automation
+
+Execute advanced operations under Prime Mode
+
+MAX improves productivity by reducing repetitive interactions and context-switching effort.
+
+1.3 Definitions
+Term	Meaning
+User Mode	Basic operational mode with limited privileges
+Prime Mode	Elevated execution mode allowing sensitive operations
+Passphrase	Minimum 8-character voice phrase used for authentication
+Task Chain	Sequential execution of dependent tasks
+CDII	Cross-Desktop Intelligent Interaction
+2. Overall Description
+2.1 Product Perspective
+
+MAX runs on top of:
+
+Windows OS (Phase 1 target)
+
+Supports multiple desktops
+
+Works offline/on-device
+
+System Components:
+
+Command interpreter
+
+Security layer
+
+Process discovery layer
+
+Automation scheduler
+
+File/application mapper
+
+2.2 User Classes
+Type	Permissions
+Standard User	User mode
+Admin User	Unlocks Prime Mode
+2.3 Operating Environment
+
+Windows 10/11
+
+Access to mic & speakers
+
+Internet not mandatory
+
+Python / Local service
+
+2.4 Constraints
+
+Voice authentication depends on mic clarity
+
+Background monitoring must not overload CPU
+
+Admin rights required for Prime Mode execution
+
+3. Functional Requirements
+3.1 Voice-Based Unlocking
+FR-01
+
+System shall unlock desktop when user command contains embedded authentication phrase.
+
+FR-02
+
+System shall verify:
+
+user voice identity
+
+passphrase length
+
+FR-03
+
+System shall reject unlock for mismatched voice/passphrase.
+
+3.2 Mode Switching
+FR-04
+
+System shall start in User Mode by default.
+
+FR-05
+
+System shall switch to Prime Mode only after valid authentication command.
+
+FR-06
+
+System shall execute admin-level actions only in Prime Mode.
+
+3.3 Application/File Execution
+FR-07
+
+System shall open apps based on name or meaning.
+Example:
+
+“Open yesterday’s PPT.”
+
+FR-08
+
+System shall open files even on different desktops.
+
+3.4 Cross-Desktop App Control (CDII)
+FR-09
+
+System shall identify:
+
+applications running on each desktop
+
+FR-10
+
+System shall interact without switching desktop.
+
+Example:
+
+"Pause YouTube on Desktop-3."
+
+3.5 Event-Based Automation
+FR-11
+
+System shall wait until event is completed.
+Example:
+
+copying finishes
+
+downloading ends
+
+video stops
+
+FR-12
+
+System shall trigger execution after event completion.
+
+3.6 Time-Based Task Execution
+FR-13
+
+System shall schedule reminders.
+
+FR-14
+
+System shall execute delayed commands:
+
+shut down after 20 minutes
+
+3.7 Chained Automation
+FR-15
+
+System shall execute multi-phase sequences.
+
+Example:
+
+After video → lock → shut down Wi-Fi
+
+4. Non-Functional Requirements
+4.1 Performance Requirements
+
+Response time < 2 seconds
+
+Task monitoring layer runs in background with <5% CPU usage
+
+4.2 Safety Requirements
+
+No destructive action without confirmation
+E.g. Delete, Clear, Format
+
+4.3 Security Requirements
+
+Passphrase must be 8+ characters
+
+Voice-matching required
+
+Sensitive operations disabled in User Mode
+
+5. System Features Summary Table
+Feature	Description	Mode
+Unlock System	Voice-based authentication	Both
+Open Apps/Files	Semantic search	User Mode
+Delete Files	Requires authentication	Prime Mode
+Cross-Desktop Control	Works without switching screen	User Mode
+Shutdown/Restart	Confirmed execution	Prime/Condition-Based
+Time Automation	Wait X minutes	User Mode
+Event Automation	Execute after task finish	User Mode
+📌 SYSTEM DIAGRAMS
+1️⃣ Use Case Diagram (Textual Representation)
+                           +-------------------+
+                           |    <<User>>       |
+                           +--------+----------+
+                                    |
+                                    | Voice/Text Commands
+                                    v
+ +---------------------------------------------------------------+
+ |                           MAX System                          |
+ |                                                               |
+ |  +-------------------+     +----------------------+           |
+ |  | Unlock Desktop    |<----| Authenticate Voice   |           |
+ |  +-------------------+     +----------------------+           |
+ |        |                                                   |
+ |        |                                                   |
+ |  +--------------+          +----------------------------+  |
+ |  | Switch Mode  |<-------->| Validate Secure Phrase     |  |
+ |  +--------------+          +----------------------------+  |
+ |        |                                                   |
+ |        |                                                   |
+ |  +-------------------+    +-----------------------------+  |
+ |  | Control App/Files |<-->| Search Running Process Map  |  |
+ |  +-------------------+    +-----------------------------+  |
+ |        |                                                   |
+ |        |                                                   |
+ |  +---------------------+  +------------------------------+ |
+ |  | Event Automation    |<->| Process Monitoring Engine   | |
+ |  +---------------------+  +------------------------------+ |
+ |        |                                                   |
+ |        |                                                   |
+ |  +-----------------------+                                |
+ |  | Time Based Reminder   |                                |
+ |  +-----------------------+                                |
+ +-----------------------------------------------------------+
+
+
+Actors:
+
+User
+
+System Services
+
+2️⃣ Activity Diagram for Unlock Feature
+Start
+ ↓
+User says command with phrase  
+ ↓  
+Check phrase length (≥8 chars)?  
+ ├── No → Reject unlock  
+ └── Yes  
+       ↓  
+Verify voice match?  
+ ├── No → Reject unlock  
+ └── Yes  
+       ↓  
+Unlock desktop  
+ ↓  
+End
+
+3️⃣ System Flow Diagram
+User Input
+   ↓
+Command Interpreter
+   ↓
+Identify Intent
+   ↓
+Decision Branch
++----------------------+
+| Unlock Intent?       |
+| Mode Switch Intent?  |
+| App/File Action?     |
+| Scheduled Action?    |
+| Event Waiting?       |
++----------------------+
+   ↓
+Execute Required Module
+   ↓
+Perform Action
+   ↓
+Confirm Output to User
+
+4️⃣ High-Level System Architecture Diagram
++--------------------------------------------------------------+
+|                          MAX System                          |
++---------------+----------------------+-----------------------+
+| Voice Input   | Text Input Module    | Background Listener    |
++-------+-------+-----------+----------+------------------------+
+        |                   |
+        +-------------+---------------------------------------------------+
+                      |
+            Command Interpretation Unit
+                      |
+      +---------------+----------------+
+      |                                |
+Intent Classifier                  Passphrase Extractor
+      |                                |
+      v                                v
+Task Engine                        Security Module
+      |                                |
+      v                                v
+Process Mapper                Mode & Authentication Manager
+      |
+      v
+Execution Layer
+      |
+      v
+OS Service Layer (App Control, Lock/Unlock, Shutdown)
+
+
+---------------------------------------------------------------------------------------------------------------------
+#####################################################################################################################
+---------------------------------------------------------------------------------------------------------------------
+⭐ PROJECT DESCRIPTION — MAX (PHASE-1 MVP)
+
+MAX is an on-device AI system operator that executes tasks using voice/text commands. MAX can:
+
+🔐 1. Unlock the desktop securely
+
+User provides a spoken command containing a built-in authentication phrase (minimum 8 characters).
+Example:
+
+“Hey Max, unlock the system, working starts now.”
+
+MAX validates:
+
+voice identity
+
+passphrase
+and unlocks.
+
+🔄 2. Operate in Two Modes
+🟢 User Mode (default)
+
+Allowed:
+
+open apps
+
+open files
+
+navigate folders
+
+control browser/media
+
+scroll
+
+view desktop-agnostic apps
+
+Restricted:
+
+file deletion
+
+terminal commands
+
+system modification
+
+🟣 Prime Mode (advanced access)
+
+Unlocked only with authenticated command.
+
+Then MAX can:
+
+delete files
+
+install/uninstall programs
+
+modify settings
+
+execute terminal commands
+
+kill processes
+
+🖥️ 3. Cross-Desktop App Control
+
+MAX should control applications on other desktops without switching.
+
+Example:
+
+“Max, pause YouTube running on Desktop-3.”
+
+User stays on current screen.
+
+⏱️ 4. Event-Based & Time-Based Automation
+
+MAX can wait for events and then execute actions.
+
+Examples:
+
+“Max, shut down after this video ends.”
+
+“Max, notify me after 30 minutes.”
+
+“Max, lock system after copying completes.”
+
+MAX detects completion automatically.
+
+🔗 5. Chained Automation
+
+Example:
+
+“Max, after downloading, move the file to Videos folder and lock system.”
+
+Execution flow:
+
+detect download finish
+
+move file
+
+lock device
+
+No additional user action required.
+
+🧠 6. Semantic App/File Access
+
+MAX can open files by meaning, not exact names.
+
+Examples:
+
+“Max, open yesterday’s PPT.”
+
+“Max, open my latest resume.”

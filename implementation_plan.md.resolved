@@ -1,0 +1,190 @@
+# MAX — SRS Gap Fix: Implementation Plan
+
+Fix all Phase-1 MVP gaps identified in the SRS review, working from highest to lowest priority.
+No existing automated tests were found — verification will use manual CLI testing.
+
+---
+
+## Fix 1 — Prime Mode Auth Bug (FR-05) 🔴 CRITICAL
+
+**Problem:** [_handle_auth_prime()](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py#197-201) activates Prime Mode without verifying passphrase.
+
+#### [MODIFY] [orchestrator.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py)
+- In [_handle_auth_prime()](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py#197-201): call `self.pass_manager.verify(phrase)` before calling [activate_prime()](file:///c:/Users/nithi/Desktop/MAX/max/max_core/modes/mode_manager.py#5-7)
+- If verification fails, print error and stay in User Mode
+- If no passphrase is set, require setting one first
+
+---
+
+## Fix 2 — Timer Actions: Shutdown/Lock After Delay (FR-14)
+
+**Problem:** Scheduler only prints a notification. Delayed `shutdown`, `lock`, `restart` commands don't exist.
+
+#### [MODIFY] [scheduler.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/automation/scheduler.py)
+- Add `schedule_action(delay_seconds, action_type, message)` method
+- Supported `action_type`: `"NOTIFY"`, `"SHUTDOWN"`, `"LOCK"`, `"RESTART"`
+- Execute OS actions via `subprocess` or `ctypes` after delay
+
+#### [MODIFY] [command_parser.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/interpreter/command_parser.py)
+- Add parsing for: `"shut down after 20 minutes"`, `"lock after 10 minutes"`, `"restart after 5 minutes"`
+- New intent: `SCHEDULE_ACTION` with entities `{action, delay_seconds}`
+
+#### [MODIFY] [orchestrator.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py)
+- Handle `SCHEDULE_ACTION` intent → call `scheduler.schedule_action()`
+
+---
+
+## Fix 3 — Semantic / Date-Based File Open (FR-07)
+
+**Problem:** "Open yesterday's PPT" fails — no time-aware or semantic file search.
+
+#### [MODIFY] [command_executor.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/executor/command_executor.py)
+- New method `_semantic_file_search(target)`:
+  - Parse date keywords: `yesterday`, `last week`, `today`, `latest`, `recent`, `newest`
+  - Parse type keywords: `PPT/presentation`, `PDF`, `resume`, `doc/document`, `image/photo`, [video](file:///c:/Users/nithi/Desktop/MAX/max/max_core/executor/command_executor.py#645-669)
+  - Search Desktop, Documents, Downloads filtered by `mtime` and extension
+  - Return best match
+
+#### [MODIFY] [command_parser.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/interpreter/command_parser.py)
+- Enhance `OPEN_APP_OR_FOLDER` entity extraction to detect `date_hint` and `type_hint`
+
+---
+
+## Fix 4 — OS-Level Screen Unlock (FR-01)
+
+**Problem:** No actual Windows lock screen unlock.
+
+#### [MODIFY] [command_executor.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/executor/command_executor.py)
+- Add `_unlock_screen()`: use `ctypes.windll.user32.LockWorkStation` in reverse: send Ctrl+Alt+Del simulation via `pywinauto` or check screen state
+- Add `_lock_screen()`: `ctypes.windll.user32.LockWorkStation()`
+- Register `LOCK_SCREEN` and `UNLOCK_SCREEN` intents
+
+#### [MODIFY] [command_parser.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/interpreter/command_parser.py)
+- Parse: `"lock the screen"`, `"lock system"` → `LOCK_SCREEN`
+- Parse: `"unlock system"`, `"unlock the screen"` → `UNLOCK_SCREEN` (requires Prime or passphrase)
+
+---
+
+## Fix 5 — Voice Speaker Verification (FR-02, FR-03)
+
+**Problem:** VoiceListener transcribes but doesn't verify who is speaking.
+
+#### [NEW] [voice_profile_manager.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/security/voice_profile_manager.py)
+- Use `resemblyzer` library (`pip install resemblyzer`)
+- `enroll(audio_samples)` — save speaker embedding to `data/voice_profile.npy`
+- [verify(audio_data)](file:///c:/Users/nithi/Desktop/MAX/max/max_core/security/passphrase_manager.py#22-29) → `bool` — compare new recording against stored embedding using cosine similarity (threshold: 0.75)
+
+#### [MODIFY] [voice_listener.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/input/voice_listener.py)
+- After STT, if `voice_profile` exists: run speaker verify before passing to callback
+- If verification fails: speak "Voice not recognized" and drop command
+
+#### [MODIFY] [orchestrator.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py)
+- Add `ENROLL_VOICE` intent (`"enroll my voice"`, `"train voice"`) to trigger enrollment flow
+- After enrollment success, persist profile via `VoiceProfileManager`
+
+---
+
+## Fix 6 — CDII: Cross-Desktop App Control (FR-09, FR-10)
+
+**Problem:** No Windows virtual desktop detection or cross-desktop interaction.
+
+#### [NEW] [desktop_manager.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/executor/desktop_manager.py)
+- Use `pyvda` library (`pip install pyvda`) for Windows 10/11 Virtual Desktop API
+- `get_apps_on_desktop(desktop_num)` → list of window titles on that desktop
+- `send_to_desktop(window_title, desktop_num)` — move window across desktops
+- `focus_window_on_desktop(window_title, desktop_num)` — focus without switching
+- `send_key_to_window(window_title, key)` — send media key to a specific window (e.g., pause YouTube on Desktop 3)
+
+#### [MODIFY] [command_parser.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/interpreter/command_parser.py)
+- Parse: `"pause YouTube on Desktop 3"` → `CDII_CONTROL` with `{app, desktop_num, action}`
+- Parse: `"what's running on Desktop 2?"` → `CDII_LIST` with `{desktop_num}`
+
+#### [MODIFY] [command_executor.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/executor/command_executor.py)
+- Handle `CDII_CONTROL` and `CDII_LIST` intents using `DesktopManager`
+
+---
+
+## Fix 7 — Event-Based Automation (FR-11, FR-12)
+
+**Problem:** No process/event monitoring system.
+
+#### [NEW] [event_monitor.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/automation/event_monitor.py)
+- Background thread monitors for:
+  - **Download finish**: watch `Downloads` folder for file size stabilization
+  - **Copy finish**: watch clipboard or file changes via `watchdog`
+  - **Video end**: monitor media player process CPU/state via `psutil`
+- When event fires: execute a queued action
+
+#### [MODIFY] [command_parser.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/interpreter/command_parser.py)
+- Parse: `"shut down after this video ends"` → `EVENT_ACTION` `{trigger: VIDEO_END, action: SHUTDOWN}`
+- Parse: `"lock after copying completes"` → `EVENT_ACTION` `{trigger: COPY_DONE, action: LOCK}`
+- Parse: `"notify me when download finishes"` → `EVENT_ACTION` `{trigger: DOWNLOAD_DONE, action: NOTIFY}`
+
+#### [MODIFY] [orchestrator.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py)
+- Handle `EVENT_ACTION` intent → register with `EventMonitor`
+
+---
+
+## Fix 8 — Chained Automation (FR-15)
+
+**Problem:** No multi-step sequential command execution.
+
+#### [NEW] [task_chain.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/automation/task_chain.py)
+- `TaskChain(steps: list[ParsedCommand])` — sequential executor
+- [run()](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py#25-40) — execute steps one by one with optional delay between
+- Steps can include waits between actions
+
+#### [MODIFY] [command_parser.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/interpreter/command_parser.py)
+- Parse multi-step commands using connectors: `"and then"`, `"after that"`, `"then"`, `"followed by"`
+- Split into list of sub-commands → `TASK_CHAIN` intent with `steps` list
+
+#### [MODIFY] [orchestrator.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py)
+- Handle `TASK_CHAIN` → create `TaskChain` and execute
+
+---
+
+## Fix 9 — Destructive Action Confirmation (NFR-4.2)
+
+**Problem:** Delete/shutdown/format execute immediately without confirmation.
+
+#### [MODIFY] [orchestrator.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/core/orchestrator.py)
+- Before executing `DELETE_FILE`, `SHUTDOWN`, `FORMAT`, `KILL_PROCESS`:
+  - Print & speak: "Are you sure? Say YES to confirm or NO to cancel."
+  - Set `self.pending_confirm = (parsed_command)` state
+  - On next input: if "yes"/"confirm" → execute; else cancel
+
+---
+
+## Fix 10 — Performance Polish (NFR-4.1)
+
+**Problem:** File search can be slow (rglob up to 5000 files).
+
+#### [MODIFY] [command_executor.py](file:///c:/Users/nithi/Desktop/MAX/max/max_core/executor/command_executor.py)
+- Add in-memory file index (built once on startup, refreshed lazily)
+- Cache [_get_running_apps()](file:///c:/Users/nithi/Desktop/MAX/max/max_core/executor/command_executor.py#932-943) results with a 2-second TTL
+- Add response time measuring with warning if >2 seconds
+
+---
+
+## Verification Plan
+
+### Manual CLI Testing (run: `cd max && python main.py`)
+
+| Fix | Test Command | Expected |
+|---|---|---|
+| Fix 1 | `enter prime wrongpassword` | "Incorrect passphrase" |
+| Fix 1 | `enter prime correctpassword` | "PRIME mode activated" |
+| Fix 2 | `shut down after 2 minutes` | "Okay, shutting down in 2 minutes" |
+| Fix 2 | `lock after 10 seconds` | Lock screen after 10 sec |
+| Fix 3 | `open yesterday's presentation` | Opens most recent .pptx from yesterday |
+| Fix 3 | `open my latest resume` | Opens newest .pdf/docx matching "resume" |
+| Fix 4 | `lock the screen` | Windows lock screen triggers |
+| Fix 6 | `what's running on Desktop 2` | Lists apps on virtual desktop 2 |
+| Fix 6 | `pause YouTube on Desktop 3` | YouTube pauses without screen switch |
+| Fix 7 | `notify me when download finishes` | Notification fires after download done |
+| Fix 8 | `open chrome and then open notepad` | Both open sequentially |
+| Fix 9 | `delete test.txt` | Asks "Are you sure? (yes/no)" |
+
+### Voice Testing (run: `cd max && python voice_main.py`)
+- Say each above command out loud — verify STT picks it up and result is correct.
+- After Fix 5: say "enroll my voice" → record enrollment → try command from different person → should be rejected.
